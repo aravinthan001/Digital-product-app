@@ -1,6 +1,7 @@
 // src/screens/CreateItemAboutScreen.js
 import React, { useMemo, useState } from 'react';
-import { KeyboardAvoidingView, Platform } from 'react-native';
+import { KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { launchImageLibrary } from 'react-native-image-picker';
 import {
   Box,
   VStack,
@@ -22,35 +23,44 @@ import {
 const MAX_DESC = 2000;
 const MAX_COVERS = 5;
 
-const currency = (v) => {
-  if (v === '' || v == null) return '';
-  const n = Number(v);
-  if (Number.isNaN(n)) return v;
-  return `$${n.toFixed(2)}`;
-};
-
 const CreateItemAboutScreen = ({ navigation }) => {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [priceRaw, setPriceRaw] = useState('');
-  const [coverPhotos, setCoverPhotos] = useState([]); // array of URLs
+  const [coverPhotos, setCoverPhotos] = useState([]); // array of local URIs
 
   const price = useMemo(() => {
     const n = Number(String(priceRaw).replace(/[^0-9.]/g, ''));
     return Number.isFinite(n) ? n : 0;
   }, [priceRaw]);
 
-  const canProceed = name.trim().length > 0 && description.trim().length > 0 && price > 0;
+  const canProceed =
+    name.trim().length > 0 && description.trim().length > 0 && price > 0;
 
-  const addCoverSlot = () => {
-    if (coverPhotos.length >= MAX_COVERS) return;
-    setCoverPhotos([...coverPhotos, '']);
-  };
+  // === Pick image from gallery ===
+  const pickImage = () => {
+    if (coverPhotos.length >= MAX_COVERS) {
+      Alert.alert('Limit Reached', 'You can only upload up to 5 photos.');
+      return;
+    }
 
-  const updateCoverAt = (idx, url) => {
-    const copy = [...coverPhotos];
-    copy[idx] = url.trim();
-    setCoverPhotos(copy);
+    launchImageLibrary(
+      {
+        mediaType: 'photo',
+        quality: 0.8,
+        selectionLimit: 1,
+      },
+      (response) => {
+        if (response.didCancel) {
+          return;
+        } else if (response.errorCode) {
+          Alert.alert('Error', response.errorMessage || 'Something went wrong.');
+        } else if (response.assets && response.assets.length > 0) {
+          const uri = response.assets[0].uri;
+          setCoverPhotos([...coverPhotos, uri]);
+        }
+      }
+    );
   };
 
   const removeCoverAt = (idx) => {
@@ -64,7 +74,7 @@ const CreateItemAboutScreen = ({ navigation }) => {
       name: name.trim(),
       description: description.trim(),
       price,
-      coverPhotos: coverPhotos.filter(Boolean),
+      coverPhotos,
     };
     navigation.navigate('CreateItemDetails', { itemData });
   };
@@ -78,16 +88,22 @@ const CreateItemAboutScreen = ({ navigation }) => {
         <VStack space="lg">
           {/* Name */}
           <Input variant="outline" size="xl" borderRadius="$lg">
-            <InputField value={name} onChangeText={setName} placeholder="Name" />
+            <InputField
+              value={name}
+              onChangeText={setName}
+              placeholder="Name"
+            />
           </Input>
 
-          {/* Description with counter */}
+          {/* Description */}
           <VStack space="xs">
             <Textarea variant="outline" size="xl" borderRadius="$lg" h={140}>
               <TextareaInput
                 value={description}
                 onChangeText={(t) =>
-                  setDescription(t.length <= MAX_DESC ? t : t.slice(0, MAX_DESC))
+                  setDescription(
+                    t.length <= MAX_DESC ? t : t.slice(0, MAX_DESC)
+                  )
                 }
                 placeholder="Description"
                 textAlignVertical="top"
@@ -95,7 +111,9 @@ const CreateItemAboutScreen = ({ navigation }) => {
               />
             </Textarea>
             <HStack justifyContent="flex-end">
-              <Text color="$coolGray400">{MAX_DESC - description.length}</Text>
+              <Text color="$coolGray400">
+                {MAX_DESC - description.length}
+              </Text>
             </HStack>
           </VStack>
 
@@ -110,43 +128,28 @@ const CreateItemAboutScreen = ({ navigation }) => {
               </Text>
             </HStack>
 
-            {/* Grid of slots */}
             <HStack space="md" flexWrap="wrap">
-              {coverPhotos.map((url, idx) => (
-                <VStack key={`cover-${idx}`} space="xs">
-                  <Pressable
-                    onLongPress={() => removeCoverAt(idx)}
-                    borderRadius="$lg"
-                    overflow="hidden"
-                    w={96}
-                    h={96}
-                    borderWidth={1}
-                    borderColor="$backgroundLight300"
-                    alignItems="center"
-                    justifyContent="center"
-                    bg="$backgroundLight50"
-                  >
-                    {url ? (
-                      <Image source={{ uri: url }} alt={`cover-${idx}`} w="$full" h="$full" />
-                    ) : (
-                      <Icon as={AddIcon} size="lg" color="$primary500" />
-                    )}
-                  </Pressable>
-                  <Input w={96} size="sm" variant="outline" borderRadius="$md">
-                    <InputField
-                      value={url}
-                      onChangeText={(t) => updateCoverAt(idx, t)}
-                      placeholder="Paste URL"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                  </Input>
-                </VStack>
+              {coverPhotos.map((uri, idx) => (
+                <Pressable
+                  key={`cover-${idx}`}
+                  onLongPress={() => removeCoverAt(idx)}
+                  borderRadius="$lg"
+                  overflow="hidden"
+                  w={96}
+                  h={96}
+                  borderWidth={1}
+                  borderColor="$backgroundLight300"
+                  alignItems="center"
+                  justifyContent="center"
+                  bg="$backgroundLight50"
+                >
+                  <Image source={{ uri }} alt={`cover-${idx}`} w="$full" h="$full" />
+                </Pressable>
               ))}
 
               {coverPhotos.length < MAX_COVERS && (
                 <Pressable
-                  onPress={addCoverSlot}
+                  onPress={pickImage}
                   borderRadius="$lg"
                   w={96}
                   h={96}
@@ -174,7 +177,14 @@ const CreateItemAboutScreen = ({ navigation }) => {
         </VStack>
 
         {/* Bottom button */}
-        <Box position="absolute" left={0} right={0} bottom={0} p="$5" bg="$white">
+        <Box
+          position="absolute"
+          left={0}
+          right={0}
+          bottom={0}
+          p="$5"
+          bg="$white"
+        >
           <Button size="xl" onPress={handleNext} isDisabled={!canProceed}>
             <ButtonText>Next</ButtonText>
           </Button>
